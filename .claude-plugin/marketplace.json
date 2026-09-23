@@ -1,0 +1,12 @@
+{
+  "name": "handoff",
+  "description": "Handoff: compressed session state notes for Claude Code, so you can /clear often and keep sessions small.",
+  "owner": { "name": "Shlomo Serber", "url": "https://github.com/ShlomoSerber" },
+  "plugins": [
+    {
+      "name": "handoff",
+      "source": "./",
+      "description": "/handoff writes a compressed AI-only state note of the session; /clear; then say 'read the handoff' to continue in a fresh context."
+    }
+  ]
+}
