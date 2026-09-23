@@ -26,12 +26,12 @@ Without an argument, `/handoff-clear` writes the handoff only. After `/clear`, s
 `scripts/statusline.sh` shows the model, your plan limits and the live context size, and turns red past 100k tokens:
 
 ```
-Opus 5.5 (1M context) · 5 hour 25% (Today 14:00) · weekly 5% (25/9/26 01:00) · fable 3% (25/9/26 01:00) · 87k/1.0M 9%
-Opus 5.5 (1M context) · 5 hour 25% (Today 14:00) · weekly 5% (25/9/26 01:00) · fable 3% (25/9/26 01:00) · 148k/1.0M 15%  ⚠ > 100k  /handoff-clear <next prompt>
+Opus 5.5 (1M context) · 5 hour 25% (Today 14:00) · Weekly 5% (25/9/26 01:00) · Fable 3% (25/9/26 01:00) · 87k/1.0M 9%
+Opus 5.5 (1M context) · 5 hour 25% (Today 14:00) · Weekly 5% (25/9/26 01:00) · Fable 3% (25/9/26 01:00) · 148k/1.0M 15% /handoff-clear <Next prompt>
 ```
 
-- `5 hour` and `weekly` come from the status JSON Claude Code passes in.
-- Per-model weekly limits (`fable` above) are not in that JSON. A detached background process fetches `https://api.anthropic.com/api/oauth/usage` with your Claude Code OAuth token at most every 5 minutes and caches the result in `~/.cache/claude-handoff/usage.json`. The status line only reads the cache, so it never waits on the network. `HANDOFF_STATUSLINE_USAGE=0` turns the fetch off.
+- `5 hour` and `Weekly` come from the status JSON Claude Code passes in. That JSON has no limits until the session's first reply, so the status line falls back to the cached values described below.
+- Per-model weekly limits (`Fable` above) are not in that JSON. A detached background process fetches `https://api.anthropic.com/api/oauth/usage` with your Claude Code OAuth token at most every 5 minutes and caches the result in `~/.cache/claude-handoff/usage.json`. The status line only reads the cache, so it never waits on the network. `HANDOFF_STATUSLINE_USAGE=0` turns the fetch off.
 - Each limit shows when it resets, in local time: `Today HH:MM`, `Tomorrow HH:MM`, else `d/m/yy HH:MM`.
 - The context count is the last reply's usage, read from the session transcript, so it drops to 0 right after `/clear`.
 
@@ -97,5 +97,5 @@ skills/_shared/FORMAT.md         handoff format rules, included by the skill via
 hooks/hooks.json                 SessionStart hook
 scripts/handoff-paths.sh         cwd -> handoff dir
 scripts/session-start.sh         pointer line, or sends the parked prompt after /clear
-scripts/statusline.sh            model + context size in the status line, warning past 100k
+scripts/statusline.sh            model + context size in the status line, /handoff-clear hint past 100k
 ```

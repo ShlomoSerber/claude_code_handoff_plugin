@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # statusLine command for Claude Code. Reads the status JSON on stdin and prints one line:
-#   <model> · 5 hour <n>% (<reset>) · weekly <n>% (<reset>) · <model-scoped weekly> <n>% (<reset>) · <used>/<window> <pct>%
-#   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red warning past HANDOFF_WARN_TOKENS)
+#   <model> · 5 hour <n>% (<reset>) · Weekly <n>% (<reset>) · <model-scoped weekly> <n>% (<reset>) · <used>/<window> <pct>%
+#   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red /handoff-clear hint past HANDOFF_WARN_TOKENS)
 # settings.json:
 #   "statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_plugin/scripts/statusline.sh\"" }
-# 5 hour and weekly come from the status JSON. Per-model weekly limits (e.g. Fable) are not in it: a detached
-# background fetch of /api/oauth/usage refreshes a cache at most every 5 min; this script only reads the cache.
+# 5 hour and Weekly come from the status JSON's rate_limits. That field is absent until the session's first reply,
+# so the cache also holds both as a fallback. Per-model weekly limits (e.g. Fable) are never in the status JSON.
+# A detached background fetch of /api/oauth/usage refreshes the cache at most every 5 min; this script only reads it.
 # Env: HANDOFF_WARN_TOKENS (default 100000), HANDOFF_STATUSLINE_COLOR=0 to disable ANSI colors,
 #      HANDOFF_STATUSLINE_USAGE=0 to skip the per-model fetch.
 set -uo pipefail
@@ -23,14 +24,21 @@ try:
     req = urllib.request.Request("https://api.anthropic.com/api/oauth/usage", headers={
         "Authorization": "Bearer " + tok, "anthropic-beta": "oauth-2025-04-20", "Content-Type": "application/json"})
     d = json.load(urllib.request.urlopen(req, timeout=10))
-    scoped = []
+    out = {"fetched_at": time.time(), "scoped": []}
     for l in d.get("limits") or []:
+        if l.get("percent") is None:
+            continue
+        v = {"percent": l["percent"], "resets_at": l.get("resets_at")}
         name = (((l.get("scope") or {}).get("model") or {}).get("display_name"))
-        if l.get("kind") == "weekly_scoped" and name and l.get("percent") is not None:
-            scoped.append({"name": name, "percent": l["percent"], "resets_at": l.get("resets_at")})
+        if l.get("kind") == "session":
+            out["five_hour"] = v
+        elif l.get("kind") == "weekly_all":
+            out["seven_day"] = v
+        elif l.get("kind") == "weekly_scoped" and name:
+            out["scoped"].append(dict(v, name=name))
     tmp = cache + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"fetched_at": time.time(), "scoped": scoped}, f)
+        json.dump(out, f)
     os.replace(tmp, cache)
 except Exception:
     pass
@@ -122,21 +130,28 @@ parts = []
 model = ((d.get("model") or {}).get("display_name") or "").strip()
 if model:
     parts.append(f"{B}{model}{X}")
+try:
+    cached = json.load(open(cache))
+except Exception:
+    cached = {}
 rl = d.get("rate_limits") or {}
-for key, label in (("five_hour", "5 hour"), ("seven_day", "weekly")):
+for key, label in (("five_hour", "5 hour"), ("seven_day", "Weekly")):
     w = rl.get(key) or {}
     if w.get("used_percentage") is not None:
         parts.append(limit(label, w["used_percentage"], w.get("resets_at")))
-try:
-    for s in json.load(open(cache)).get("scoped") or []:
-        parts.append(limit(str(s["name"]).lower(), s["percent"], s.get("resets_at")))
-except Exception:
-    pass
+    elif isinstance(cached.get(key), dict) and cached[key].get("percent") is not None:
+        # No rate_limits before the session's first reply: use the cached API value.
+        parts.append(limit(label, cached[key]["percent"], cached[key].get("resets_at")))
+for s in cached.get("scoped") or []:
+    try:
+        parts.append(limit(str(s["name"]), s["percent"], s.get("resets_at")))
+    except Exception:
+        pass
 col = G if used < warn * 0.6 else (Y if used < warn else R)
 parts.append(f"{col}{k(used)}{X}" + (f"/{k(size)}" if size else "") + (f" {col}{pct:.0f}%{X}" if pct is not None else ""))
 line = " · ".join(parts)
 if used >= warn:
-    line += f"  {R}{B}⚠ > {k(warn)}  /handoff-clear <next prompt>{X}"
+    line += f" {R}{B}/handoff-clear <Next prompt>{X}"
 print(line)
 PY
 printf '%s' "$INPUT" | python3 -c "$SCRIPT" "$WARN" "$COLOR" "$CACHE" 2>/dev/null || echo "context ?"
