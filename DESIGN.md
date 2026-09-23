@@ -87,7 +87,7 @@ So on `clear` the hook sends the parked prompt synchronously, once, and deletes 
 
 ## 7. Status line
 
-`statusLine` in settings.json receives a JSON document on stdin with `model.display_name`, `transcript_path`, `rate_limits.{five_hour,seven_day}.used_percentage` and `context_window.{context_window_size, current_usage}`. `scripts/statusline.sh` prints `<model> · 5 hour <n>% · weekly <n>% · <model> <n>% · <used>/<window> <pct>%`. Limits are green under 50%, yellow to 80%, red above. Context is green under 60k, yellow to 100k, red above, with the `/handoff-clear` suggestion appended past the threshold.
+`statusLine` in settings.json receives a JSON document on stdin with `model.display_name`, `transcript_path`, `rate_limits.{five_hour,seven_day}.used_percentage` and `context_window.{context_window_size, current_usage}`. `scripts/statusline.sh` prints `<model> · 5 hour <n>% (<reset>) · weekly <n>% (<reset>) · <model> <n>% (<reset>) · <used>/<window> <pct>%`. `<reset>` is local time, `Today HH:MM`, `Tomorrow HH:MM` or `d/m/yy HH:MM`, from `resets_at` (epoch seconds in the status JSON, ISO 8601 in the usage endpoint). Limits are green under 50%, yellow to 80%, red above. Context is green under 60k, yellow to 100k, red above, with the `/handoff-clear` suggestion appended past the threshold.
 
 Context: tokens in context = fresh input + cache writes + cache reads of the last main-thread request. The script reads that usage from the tail (512 KB) of `transcript_path`, skipping sidechain entries, and computes the percentage itself. `current_usage` in the status JSON is only the fallback: it is `null` right after `/clear` and can lag a turn behind, so the counter looked stuck around a handoff. A session with no reply yet shows 0.
 

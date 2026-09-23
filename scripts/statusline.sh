@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # statusLine command for Claude Code. Reads the status JSON on stdin and prints one line:
-#   <model> · 5 hour <n>% · weekly <n>% · <model-scoped weekly> <n>% · <used>/<window> <pct>%   (+ red warning past HANDOFF_WARN_TOKENS)
+#   <model> · 5 hour <n>% (<reset>) · weekly <n>% (<reset>) · <model-scoped weekly> <n>% (<reset>) · <used>/<window> <pct>%
+#   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red warning past HANDOFF_WARN_TOKENS)
 # settings.json:
 #   "statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_plugin/scripts/statusline.sh\"" }
 # 5 hour and weekly come from the status JSON. Per-model weekly limits (e.g. Fable) are not in it: a detached
@@ -26,7 +27,7 @@ try:
     for l in d.get("limits") or []:
         name = (((l.get("scope") or {}).get("model") or {}).get("display_name"))
         if l.get("kind") == "weekly_scoped" and name and l.get("percent") is not None:
-            scoped.append({"name": name, "percent": l["percent"]})
+            scoped.append({"name": name, "percent": l["percent"], "resets_at": l.get("resets_at")})
     tmp = cache + ".tmp"
     with open(tmp, "w") as f:
         json.dump({"fetched_at": time.time(), "scoped": scoped}, f)
@@ -49,6 +50,7 @@ fi
 
 read -r -d '' SCRIPT <<'PY' || true
 import sys, json, os
+from datetime import datetime
 warn = int(sys.argv[1]); color = sys.argv[2] != "0"; cache = sys.argv[3]
 try:
     d = json.loads(sys.stdin.read() or "{}")
@@ -91,7 +93,7 @@ if used is None:
 pct = used * 100 / size if size else None
 
 def c(code): return code if color else ""
-Y, R, G, B, X = c("\033[33m"), c("\033[31m"), c("\033[32m"), c("\033[1m"), c("\033[0m")
+Y, R, G, B, DIM, X = c("\033[33m"), c("\033[31m"), c("\033[32m"), c("\033[1m"), c("\033[2m"), c("\033[0m")
 
 def k(n):
     n = int(n)
@@ -99,10 +101,22 @@ def k(n):
     if n >= 1_000: return f"{n/1_000:.0f}k"
     return str(n)
 
-def limit(label, p):
+def when(r):
+    # Reset time in local time: "Today 14:00", "Tomorrow 14:00", else "d/m/yy HH:MM" (e.g. 25/9/26 14:00).
+    # Accepts epoch seconds or ISO 8601.
+    try:
+        t = datetime.fromtimestamp(float(r)) if isinstance(r, (int, float)) else datetime.fromisoformat(str(r)).astimezone()
+        days = (t.date() - datetime.now().date()).days
+        day = "Today" if days == 0 else "Tomorrow" if days == 1 else f"{t.day}/{t.month}/{t:%y}"
+        return f"{day} {t:%H:%M}"
+    except Exception:
+        return ""
+
+def limit(label, p, r=None):
     p = float(p)
     col = G if p < 50 else (Y if p < 80 else R)
-    return f"{label} {col}{p:.0f}%{X}"
+    w = when(r) if r else ""
+    return f"{label} {col}{p:.0f}%{X}" + (f" {DIM}({w}){X}" if w else "")
 
 parts = []
 model = ((d.get("model") or {}).get("display_name") or "").strip()
@@ -110,12 +124,12 @@ if model:
     parts.append(f"{B}{model}{X}")
 rl = d.get("rate_limits") or {}
 for key, label in (("five_hour", "5 hour"), ("seven_day", "weekly")):
-    p = (rl.get(key) or {}).get("used_percentage")
-    if p is not None:
-        parts.append(limit(label, p))
+    w = rl.get(key) or {}
+    if w.get("used_percentage") is not None:
+        parts.append(limit(label, w["used_percentage"], w.get("resets_at")))
 try:
     for s in json.load(open(cache)).get("scoped") or []:
-        parts.append(limit(str(s["name"]).lower(), s["percent"]))
+        parts.append(limit(str(s["name"]).lower(), s["percent"], s.get("resets_at")))
 except Exception:
     pass
 col = G if used < warn * 0.6 else (Y if used < warn else R)
