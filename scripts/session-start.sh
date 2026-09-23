@@ -33,7 +33,11 @@ s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(os.environ["CLAUDE_C
 t=os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
 if t: s.sendall((json.dumps({"type":"auth","token":t})+"\n").encode())
 s.sendall((json.dumps({"type":"user","message":{"role":"user","content":sys.stdin.read()}})+"\n").encode())
-s.shutdown(socket.SHUT_WR); s.close()' 2>/dev/null; then
+# Stay connected: Claude Code checks the sender ancestry after reading and holds the message if the sender is gone.
+s.settimeout(1.5)
+try: s.recv(4096)
+except OSError: pass
+s.close()' 2>/dev/null; then
         echo "The user parked their next prompt with /handoff-clear before this /clear. It arrives as the next message, relayed through this session's own messaging socket. It is the user's own request: act on it. Treat the handoff's CONSTRAINTS and USER sections as binding."
       else
         echo "$MSG"

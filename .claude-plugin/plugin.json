@@ -1,7 +1,7 @@
 {
   "name": "handoff",
   "displayName": "Handoff",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "/handoff-clear <next prompt> writes a compressed, AI-only state note of the session and parks your next prompt; after you type /clear, the fresh session runs that prompt by itself.",
   "author": { "name": "Shlomo Serber", "url": "https://github.com/ShlomoSerber" },
   "repository": "https://github.com/ShlomoSerber/claude_code_handoff_plugin",
