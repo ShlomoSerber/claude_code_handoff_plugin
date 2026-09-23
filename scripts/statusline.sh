@@ -39,7 +39,7 @@ Y, R, G, DIM, B, X = c("\033[33m"), c("\033[31m"), c("\033[32m"), c("\033[2m"), 
 col = G if used < warn * 0.6 else (Y if used < warn else R)
 line = f"context {col}{k(used)}{X}" + (f"/{k(size)}" if size else "") + (f" {col}{float(pct):.0f}%{X}" if pct is not None else "")
 if used >= warn:
-    line += f"  {R}{B}\u26a0 context > {k(warn)}  /handoff-clear <next prompt>  or  /handoff{X}"
+    line += f"  {R}{B}\u26a0 context > {k(warn)}  /handoff-clear <next prompt>{X}"
 print(line)
 PY
 printf '%s' "$INPUT" | python3 -c "$SCRIPT" "$WARN" "$COLOR" 2>/dev/null || echo "context ?"

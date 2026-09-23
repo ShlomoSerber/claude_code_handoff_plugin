@@ -1,8 +1,8 @@
 {
   "name": "handoff",
   "displayName": "Handoff",
-  "version": "0.3.0",
-  "description": "/handoff writes a compressed, AI-only state note of the current session next to Claude Code's own session files, so you can /clear and resume in a fresh, small context by saying 'read the handoff'.",
+  "version": "0.4.1",
+  "description": "/handoff-clear <next prompt> writes a compressed, AI-only state note of the session and parks your next prompt; after you type /clear, the fresh session runs that prompt by itself.",
   "author": { "name": "Shlomo Serber", "url": "https://github.com/ShlomoSerber" },
   "repository": "https://github.com/ShlomoSerber/claude_code_handoff_plugin",
   "license": "MIT",

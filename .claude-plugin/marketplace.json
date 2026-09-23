@@ -6,7 +6,7 @@
     {
       "name": "handoff",
       "source": "./",
-      "description": "/handoff writes a compressed AI-only state note of the session; /clear; then say 'read the handoff' to continue in a fresh context."
+      "description": "/handoff-clear <next prompt> writes a compressed state note and parks the prompt; type /clear and the fresh session runs it."
     }
   ]
 }

@@ -41,17 +41,17 @@ Where the evidence agrees on the trigger:
 - Manus: a 1M model "performs well only until < 256k tokens"; rot threshold around 128k.
 
 Rules that follow, for a 1M-window session model (`opus[1m]` never auto-compacts before ~967k, so nothing else will shrink the context for you):
-- Clear at task boundaries. Next prompt starts something new → `/handoff`, `/clear`.
+- Clear at task boundaries. Next prompt starts something new → `/handoff-clear <prompt>`, `/clear`.
 - Inside a task, keep going. Mid-debugging state is expensive to rebuild and easy to lose.
 - Under ~20-30k tokens, do not bother. Check with `/context`.
-- Above ~100k, or when answers start ignoring earlier instructions, clear even mid-task with a `/handoff next: …` note.
+- Above ~100k, or when answers start ignoring earlier instructions, clear even mid-task with `/handoff-clear <next step>`.
 - Before a break longer than the cache TTL (1 hour on Pro/Max, 5 minutes on API billing), always hand off. Re-warming 100k of cold context costs full input price ($0.50 on Opus 5) versus $0.06 for a fresh 10k.
 
-`/compact [instructions]` is the built-in alternative. It uses the session model and the warm cache, so its cost is the same as `/handoff`. Reasons to prefer `/handoff`: you control the size (compaction summaries run several thousand tokens and the built-in schema keeps code snippets), the note persists on disk and survives a crash, and the next session carries only a 40-token pointer until you ask for the body. `/rewind` is cheaper than both when you only want to abandon a wrong path: it truncates back to an already-cached prefix.
+`/compact [instructions]` is the built-in alternative. It uses the session model and the warm cache, so its cost is the same as `/handoff-clear`. Reasons to prefer `/handoff-clear`: you control the size (compaction summaries run several thousand tokens and the built-in schema keeps code snippets), the note persists on disk and survives a crash, and the next session carries only a 40-token pointer until you ask for the body. `/rewind` is cheaper than both when you only want to abandon a wrong path: it truncates back to an already-cached prefix.
 
 ## 3. Format for an AI reader
 
-Principles applied in `skills/handoff/SKILL.md`:
+Principles applied in `skills/_shared/FORMAT.md`:
 
 - State, not narrative. The reader needs where things are, not how they got there.
 - Fixed section keys in a fixed order. The reader can skip to `NEXT` without parsing.
@@ -73,11 +73,17 @@ Not used: Claude Code's auto memory (`…/memory/MEMORY.md`). That file is loade
 
 A `SessionStart` hook (`startup|resume|clear`) prints one line with path, age and approximate size, plus "read it only when asked". About 40 tokens when a handoff exists, zero when not. The body never enters context unprompted, so a stale handoff from last week cannot hijack an unrelated session.
 
-## 6. Why `/handoff-clear` still needs you to type `/clear`
+## 6. Why you still type `/clear`, and how the parked prompt runs by itself
 
-Checked in the Claude Code docs (skills, hooks reference, keybindings, sessions) and in the 2.1.280 binary: no skill, hook output field or keybinding action can run `/clear` or submit a prompt. Hook outputs are limited to `additionalContext`, `decision: block`, `systemMessage`, `updatedInput` (tool input only) and `continue/stopReason`. Keybinding actions include `chat:clearInput` and `chat:clearScreen`, not a conversation clear. `/clear` takes no prompt argument.
+Checked in the Claude Code docs and in the 2.1.280 binary: no skill, hook output field or keybinding action can run `/clear`. Keybinding actions include `chat:clearInput` and `chat:clearScreen`, not a conversation clear. `/clear` takes no prompt argument. Messages injected through the messaging socket carry `skipSlashCommands: true`, so an injected `/clear` is plain text. `xdotool` cannot see windows on Wayland, and `TIOCSTI` is disabled (`dev.tty.legacy_tiocsti = 0`). Printing `/clear` as the skill's reply does nothing and looks like it ran; the skill must tell the user to type it.
 
-What does exist: `SessionStart` fires with `source: clear`, and its stdout lands in context before the first prompt. So `/handoff-clear` parks the next prompt in `pending-prompt.txt`; the hook prints `Look at the handoff in <path>. The following is the users next prompt: <text>` once and deletes the file. The user types `/clear` and any acknowledgement. Two guards: the parked prompt expires after 2 hours, and `source: resume` leaves it untouched, so an old prompt cannot fire in an unrelated session.
+What does work after `/clear` (tested in an interactive session, 2026-09-23):
+- `SessionStart` fires with `source: clear`. Its stdout lands in context but does not start a turn.
+- `hookSpecificOutput.initialUserMessage` exists in the schema but is consumed only at process start (print/SDK path). On an interactive `/clear` it is ignored.
+- Each interactive session listens on `$CLAUDE_CODE_MESSAGING_SOCKET`; hooks inherit it and `$CLAUDE_CODE_MESSAGING_TOKEN`. Writing `{"type":"auth","token":…}` then `{"type":"user","message":{"role":"user","content":…}}` queues a user message, and the idle session starts a turn on it. The binary logs this exact recipe at startup.
+- In bypass-permissions mode, peer messages are held for review unless the sender is a descendant of the session (`selfSent`). A background process detached from the hook gets reparented and is held. A synchronous send from inside the hook on `source: clear` is delivered. The same send on `source: startup` is held ("from an unidentified session"), so the hook uses the socket only on `clear`.
+
+So on `clear` the hook sends the parked prompt synchronously, once, and deletes `pending-prompt.txt`. It prints one context line telling the model the relayed message is the user's own request, since Claude Code frames it as "Another Claude session sent a message". On `startup`, or if the socket is missing or the send fails, the hook prints the line as context and the user sends any message. Guards: the parked prompt expires after 2 hours, and `source: resume` leaves it untouched, so an old prompt cannot fire in an unrelated session. The socket protocol is undocumented; if a Claude Code update breaks it, the fallback keeps the flow working with one extra message.
 
 ## 7. Status line
 

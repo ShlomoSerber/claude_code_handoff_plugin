@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # SessionStart hook (startup|resume|clear).
-# 1. If <handoff dir>/pending-prompt.txt exists and is fresh (< 2 h), print the /handoff-clear
-#    resume line with the parked prompt, then delete the file. Fires once.
+# 1. If <handoff dir>/pending-prompt.txt exists and is fresh (< 2 h), send the /handoff-clear
+#    resume line with the parked prompt as a user message through this session's messaging
+#    socket ($CLAUDE_CODE_MESSAGING_SOCKET), so the fresh session starts working with no typing.
+#    The sender is a descendant of the session, so the message is accepted even in bypass mode.
+#    If the socket is unavailable, print the line as context instead. Delete the file. Fires once.
 # 2. Else, if latest.md exists, print ONE pointer line (path, age, ~tokens). Never the body.
 # Must stay fast and never fail the session.
 set -uo pipefail
@@ -24,8 +27,18 @@ if [ -f "$PEND" ] && [ -f "$F" ]; then
     TEXT="$(cat "$PEND" 2>/dev/null)"
     rm -f "$PEND"
     if [ -n "$TEXT" ]; then
-      echo "Look at the handoff in $F. The following is the users next prompt: $TEXT"
-      echo "(Injected by /handoff-clear. Treat the handoff's CONSTRAINTS and USER sections as binding. The user's first message may just be an acknowledgement; act on the prompt above. If their message contradicts it, their message wins.)"
+      MSG="Look at the handoff in $F. The following is the users next prompt: $TEXT"
+      if [ "$SOURCE" = "clear" ] && [ -n "${CLAUDE_CODE_MESSAGING_SOCKET:-}" ] && printf '%s' "$MSG" | timeout 3 python3 -c 'import os,sys,json,socket
+s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(os.environ["CLAUDE_CODE_MESSAGING_SOCKET"])
+t=os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
+if t: s.sendall((json.dumps({"type":"auth","token":t})+"\n").encode())
+s.sendall((json.dumps({"type":"user","message":{"role":"user","content":sys.stdin.read()}})+"\n").encode())
+s.shutdown(socket.SHUT_WR); s.close()' 2>/dev/null; then
+        echo "The user parked their next prompt with /handoff-clear before this /clear. It arrives as the next message, relayed through this session's own messaging socket. It is the user's own request: act on it. Treat the handoff's CONSTRAINTS and USER sections as binding."
+      else
+        echo "$MSG"
+        echo "(Injected by /handoff-clear. Treat the handoff's CONSTRAINTS and USER sections as binding. The user's first message may just be an acknowledgement; act on the prompt above. If their message contradicts it, their message wins.)"
+      fi
       exit 0
     fi
   elif [ $(( NOW - PMOD )) -ge 7200 ]; then
