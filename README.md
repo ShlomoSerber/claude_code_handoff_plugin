@@ -1,6 +1,6 @@
 # Handoff — a Claude Code plugin
 
-`/handoff-clear <next prompt>` writes a compressed, AI-only note of the current session's state to disk and parks your next prompt. You type `/clear`. The fresh session receives the prompt by itself and starts with a few hundred tokens instead of the whole history.
+`/handoff-clear <next prompt>` writes a compressed, AI-only note of the current session's state to disk and parks your next prompt. You type `/clear` and any short message. The fresh session acts on the parked prompt and starts with a few hundred tokens instead of the whole history.
 
 ## Flow
 
@@ -8,16 +8,16 @@
 … you work in a session …
 /handoff-clear seguí con el test que falla   # writes latest.md, parks the prompt
 /clear                                       # you type this; nothing can do it for you
-                                             # the fresh session starts working on its own
+dale                                         # any message starts the parked prompt
 ```
 
-After `/clear`, the SessionStart hook sends this as a user message, once:
+After `/clear`, the SessionStart hook adds this to the fresh session's context, once:
 
 ```
 Look at the handoff in <path>/latest.md. The following is the users next prompt: <your text>
 ```
 
-The hook delivers it through the session's own messaging socket (`$CLAUDE_CODE_MESSAGING_SOCKET`), so no second message from you is needed. On a fresh `claude` start (not `/clear`), or if the socket is unavailable, the hook falls back to printing the line as context, and you send any message (`dale`) to start. Claude Code has no way for a skill or hook to run `/clear` (DESIGN.md §6), so that one keystroke stays yours. Parked prompts expire after 2 hours and are never consumed on `--resume`.
+Your next message, even just `dale`, starts the turn, and Claude treats the parked prompt as your own request. An earlier version sent the prompt through Claude Code's messaging socket so it ran with no extra message. Claude Code labels every socket message as coming from another Claude session, so the prompt no longer counted as yours (DESIGN.md §6). Claude Code has no way for a skill or hook to run `/clear` (DESIGN.md §6), so that one keystroke stays yours. Parked prompts expire after 2 hours and are never consumed on `--resume`.
 
 Without an argument, `/handoff-clear` writes the handoff only. After `/clear`, say "lee el handoff, seguimos con X".
 
@@ -57,7 +57,7 @@ Next to Claude Code's own session transcripts, per project:
 
 ## How the fresh session finds it
 
-`hooks/hooks.json` runs `scripts/session-start.sh` on `startup`, `resume` and `clear`. If a fresh `pending-prompt.txt` exists, it sends the resume line above as a user message and deletes the file. Otherwise, if `latest.md` exists, it prints one pointer line: path, age, approximate size, read only when asked. It never injects the body. Cost: about 40 tokens when a handoff exists, zero otherwise.
+`hooks/hooks.json` runs `scripts/session-start.sh` on `startup`, `resume` and `clear`. If a fresh `pending-prompt.txt` exists, it prints the resume line above as context and deletes the file. Otherwise, if `latest.md` exists, it prints one pointer line: path, age, approximate size, read only when asked. It never injects the body. Cost: about 40 tokens when a handoff exists, zero otherwise.
 
 ## What the handoff contains
 
@@ -96,6 +96,6 @@ skills/handoff-clear/SKILL.md    /handoff-clear: handoff + parked next prompt (m
 skills/_shared/FORMAT.md         handoff format rules, included by the skill via !`cat`
 hooks/hooks.json                 SessionStart hook
 scripts/handoff-paths.sh         cwd -> handoff dir
-scripts/session-start.sh         pointer line, or sends the parked prompt after /clear
+scripts/session-start.sh         pointer line, or the parked prompt after /clear
 scripts/statusline.sh            model + context size in the status line, /handoff-clear hint past 100k
 ```
