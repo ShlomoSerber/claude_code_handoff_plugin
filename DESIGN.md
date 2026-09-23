@@ -73,6 +73,16 @@ Not used: Claude Code's auto memory (`…/memory/MEMORY.md`). That file is loade
 
 A `SessionStart` hook (`startup|resume|clear`) prints one line with path, age and approximate size, plus "read it only when asked". About 40 tokens when a handoff exists, zero when not. The body never enters context unprompted, so a stale handoff from last week cannot hijack an unrelated session.
 
+## 6. Why `/handoff-clear` still needs you to type `/clear`
+
+Checked in the Claude Code docs (skills, hooks reference, keybindings, sessions) and in the 2.1.280 binary: no skill, hook output field or keybinding action can run `/clear` or submit a prompt. Hook outputs are limited to `additionalContext`, `decision: block`, `systemMessage`, `updatedInput` (tool input only) and `continue/stopReason`. Keybinding actions include `chat:clearInput` and `chat:clearScreen`, not a conversation clear. `/clear` takes no prompt argument.
+
+What does exist: `SessionStart` fires with `source: clear`, and its stdout lands in context before the first prompt. So `/handoff-clear` parks the next prompt in `pending-prompt.txt`; the hook prints `Look at the handoff in <path>. The following is the users next prompt: <text>` once and deletes the file. The user types `/clear` and any acknowledgement. Two guards: the parked prompt expires after 2 hours, and `source: resume` leaves it untouched, so an old prompt cannot fire in an unrelated session.
+
+## 7. Status line
+
+`statusLine` in settings.json receives a JSON document on stdin with `context_window.current_usage.{input_tokens, cache_creation_input_tokens, cache_read_input_tokens}`, `context_window_size` and `used_percentage`. Tokens in context now = the sum of the three `current_usage` fields (the last request's fresh input plus cache writes plus cache reads). `scripts/statusline.sh` prints `context <used>/<window> <pct>%`, green under 60k, yellow to 100k, red above, with the `/handoff-clear` suggestion appended past the threshold. The built-in yellow warning ("Context low (N% remaining)") only appears near auto-compact, which on a 1M model is ~967k; hence the custom line.
+
 ## Sources
 
 Anthropic

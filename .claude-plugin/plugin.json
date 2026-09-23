@@ -1,7 +1,7 @@
 {
   "name": "handoff",
   "displayName": "Handoff",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "/handoff writes a compressed, AI-only state note of the current session next to Claude Code's own session files, so you can /clear and resume in a fresh, small context by saying 'read the handoff'.",
   "author": { "name": "Shlomo Serber", "url": "https://github.com/ShlomoSerber" },
   "repository": "https://github.com/ShlomoSerber/claude_code_handoff_plugin",
