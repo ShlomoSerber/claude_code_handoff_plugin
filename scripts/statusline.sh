@@ -3,7 +3,7 @@
 #   <model> · 5 hour <n>% (<reset>) · Weekly <n>% (<reset>) · <model-scoped weekly> <n>% (<reset>) · <used>/<window> <pct>%
 #   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red /handoff-clear hint past HANDOFF_WARN_TOKENS)
 # settings.json:
-#   "statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_plugin/scripts/statusline.sh\"" }
+#   "statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_command/scripts/statusline.sh\"" }
 # 5 hour and Weekly come from the status JSON's rate_limits. That field is absent until the session's first reply,
 # so the cache also holds both as a fallback. Per-model weekly limits (e.g. Fable) are never in the status JSON.
 # A detached background fetch of /api/oauth/usage refreshes the cache at most every 5 min; this script only reads it.
