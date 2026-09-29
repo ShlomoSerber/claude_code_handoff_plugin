@@ -38,7 +38,7 @@ Opus 5.5 (1M context) · 5 hour 25% (Today 14:00) · Weekly 5% (25/9/26 01:00) �
 Enable it in `~/.claude/settings.json` (the plugin cannot do this for you; `statusLine` is not a plugin component):
 
 ```json
-"statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_command/scripts/statusline.sh\"", "padding": 0 }
+"statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_plugin/scripts/statusline.sh\"", "padding": 0 }
 ```
 
 `HANDOFF_WARN_TOKENS` changes the threshold; `HANDOFF_STATUSLINE_COLOR=0` disables colors.
@@ -74,14 +74,14 @@ See `DESIGN.md` for the research behind the choices: why the main model writes t
 ## Install
 
 ```
-/plugin marketplace add ShlomoSerber/claude_code_handoff_command
+/plugin marketplace add ShlomoSerber/claude_code_handoff_plugin
 /plugin install handoff@handoff
 ```
 
 Or from a local checkout, without the interactive session:
 
 ```
-claude plugin marketplace add /path/to/claude_code_handoff_command
+claude plugin marketplace add /path/to/claude_code_handoff_plugin
 claude plugin install handoff@handoff
 ```
 

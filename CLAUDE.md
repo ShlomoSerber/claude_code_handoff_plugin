@@ -1,4 +1,4 @@
-# claude_code_handoff_command — harness notes
+# claude_code_handoff_plugin — harness notes
 
 Start here: `README.md` (what it does, layout), `DESIGN.md` (why each choice was made, with sources), then the component the task touches. Update `DESIGN.md` when a design decision changes and `README.md` when behaviour changes. If a handoff exists for this directory (the SessionStart hook prints its path), read it when the user asks.
 
@@ -13,7 +13,7 @@ Start here: `README.md` (what it does, layout), `DESIGN.md` (why each choice was
 | Hook | `hooks/hooks.json` → `scripts/session-start.sh` on `startup|resume|clear`. Prints ONE pointer line (path, age, ~tokens). Never prints the handoff body. |
 | Storage | `~/.claude/projects/<encoded-cwd>/handoff/latest.md` + `<YYYYmmdd-HHMMSS>.md` (keep 10) + `pending-prompt.txt` (transient). Encoding: every non-alphanumeric char → `-`, computed by `scripts/handoff-paths.sh`. Verified against real dirs. |
 | Install | Local directory marketplace `handoff` → plugin `handoff@handoff`, user scope. Claude Code copies the plugin to `~/.claude/plugins/cache/handoff/handoff/<version>/`. Repo edits do NOT apply until `version` in `.claude-plugin/plugin.json` is bumped, then: `claude plugin marketplace update handoff && claude plugin update handoff@handoff`, then restart Claude Code. |
-| Remote | `git@github.com:ShlomoSerber/claude_code_handoff_command.git`, branch `main`. Public install: `/plugin marketplace add ShlomoSerber/claude_code_handoff_command` then `/plugin install handoff@handoff`. |
+| Remote | `git@github.com:ShlomoSerber/claude_code_handoff_plugin.git`, branch `main`. Public install: `/plugin marketplace add ShlomoSerber/claude_code_handoff_plugin` then `/plugin install handoff@handoff`. |
 | Sibling plugins | `../claude_code_clear_language_plugin`, `../claude_code_archive_plugin`, `../vm-tunnels/plugin` follow the same layout (`.claude-plugin/plugin.json` + `marketplace.json`, `hooks/hooks.json`, `scripts/`). Match them. |
 | Testing | Drive `claude` in a pty (python `pty.fork`, send `/handoff:handoff-clear <prompt>`, then `/clear`, then `dale`, grep the screen). Trust dialog defaults to "No, exit": send Down + Enter. Unset `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN` when launching from inside Claude Code. Clean up the scratch dir's `~/.claude/projects/...` afterwards. |
 

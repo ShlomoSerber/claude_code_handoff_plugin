@@ -4,7 +4,7 @@
   "version": "0.5.0",
   "description": "/handoff-clear <next prompt> writes a compressed, AI-only state note of the session and parks your next prompt; after you type /clear and send any short message, the fresh session acts on that prompt.",
   "author": { "name": "Shlomo Serber", "url": "https://github.com/ShlomoSerber" },
-  "repository": "https://github.com/ShlomoSerber/claude_code_handoff_command",
+  "repository": "https://github.com/ShlomoSerber/claude_code_handoff_plugin",
   "license": "MIT",
   "keywords": ["context", "handoff", "session", "compaction", "token-savings", "memory"]
 }
