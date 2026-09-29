@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # statusLine command for Claude Code. Reads the status JSON on stdin and prints one line:
 #   <model> · 5 hour <n>% (<reset>) · Weekly <n>% (<reset>) · <model-scoped weekly> <n>% (<reset>) · <used>/<window> <pct>%
-#   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red /handoff-clear hint past HANDOFF_WARN_TOKENS)
+#   <reset> is local time: Today HH:MM, Tomorrow HH:MM, else d/m/yy HH:MM   (+ red /handoff hint past HANDOFF_WARN_TOKENS)
 # settings.json:
 #   "statusLine": { "type": "command", "command": "\"/path/to/claude_code_handoff_plugin/scripts/statusline.sh\"" }
 # 5 hour and Weekly come from the status JSON's rate_limits. That field is absent until the session's first reply,
 # so the cache also holds both as a fallback. Per-model weekly limits (e.g. Fable) are never in the status JSON.
 # A detached background fetch of /api/oauth/usage refreshes the cache at most every 5 min; this script only reads it.
-# Env: HANDOFF_WARN_TOKENS (default 100000), HANDOFF_STATUSLINE_COLOR=0 to disable ANSI colors,
+# Env: HANDOFF_WARN_TOKENS (default 150000), HANDOFF_STATUSLINE_COLOR=0 to disable ANSI colors,
 #      HANDOFF_STATUSLINE_USAGE=0 to skip the per-model fetch.
 set -uo pipefail
-WARN="${HANDOFF_WARN_TOKENS:-100000}"
+WARN="${HANDOFF_WARN_TOKENS:-150000}"
 COLOR="${HANDOFF_STATUSLINE_COLOR:-1}"
 FETCH="${HANDOFF_STATUSLINE_USAGE:-1}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/claude-handoff/usage.json"
@@ -151,7 +151,7 @@ col = G if used < warn * 0.6 else (Y if used < warn else R)
 parts.append(f"{col}{k(used)}{X}" + (f"/{k(size)}" if size else "") + (f" {col}{pct:.0f}%{X}" if pct is not None else ""))
 line = " · ".join(parts)
 if used >= warn:
-    line += f" {R}{B}/handoff-clear <Next prompt>{X}"
+    line += f' {R}{B}/handoff -i "handoff instructions" -p "next prompt"{X}'
 print(line)
 PY
 printf '%s' "$INPUT" | python3 -c "$SCRIPT" "$WARN" "$COLOR" "$CACHE" 2>/dev/null || echo "context ?"

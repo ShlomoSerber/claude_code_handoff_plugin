@@ -1,37 +1,57 @@
 #!/usr/bin/env bash
 # SessionStart hook (startup|resume|clear).
-# 1. If <handoff dir>/pending-prompt.txt exists and is fresh (< 2 h), print the /handoff-clear
-#    resume line with the parked prompt as context, and delete the file. Fires once. The user's
-#    next message starts the turn, so the prompt counts as theirs (no socket relay: DESIGN.md §6).
-# 2. Else, if latest.md exists, print ONE pointer line (path, age, ~tokens). Never the body.
+# 1. Restarted by the `claude` wrapper after /handoff (source startup, $CLAUDE_HANDOFF_LOAD
+#    names a one-shot file holding the handoff path): print the handoff body as context. The
+#    user's -p prompt, if any, arrives as the session's first message.
+# 2. /clear fallback (no wrapper): if <handoff dir>/pending-prompt.txt is fresh (< 2 h), print
+#    the handoff body plus the parked prompt, once. The user's next message starts the turn.
+# 3. Else, if latest.md exists, print ONE pointer line (path, age, ~tokens). Never the body.
+# The body enters context only in 1 and 2, i.e. right after the user's own /handoff.
 # Must stay fast and never fail the session.
 set -uo pipefail
 INPUT="$(cat 2>/dev/null || true)"
-CWD="$PWD"; SOURCE=""
+CWD="$PWD"; SOURCE=""; SESSION_ID=""; TRANSCRIPT_PATH=""
 if command -v python3 >/dev/null 2>&1 && [ -n "$INPUT" ]; then
   eval "$(printf '%s' "$INPUT" | python3 -c 'import sys,json,shlex
 try:
-    d=json.load(sys.stdin); print("CWD_IN="+shlex.quote(d.get("cwd") or "")); print("SOURCE="+shlex.quote(d.get("source") or ""))
+    d=json.load(sys.stdin)
+    for k in ("cwd","source","session_id","transcript_path"):
+        print(k.upper()+"="+shlex.quote(d.get(k) or ""))
 except Exception: pass' 2>/dev/null)"
-  [ -n "${CWD_IN:-}" ] && CWD="$CWD_IN"
+  [ -n "$CWD" ] || CWD="$PWD"
 fi
-DIR="$("$(dirname "${BASH_SOURCE[0]}")/handoff-paths.sh" "$CWD" 2>/dev/null)" || exit 0
+
+print_body() { # $1 = handoff file, $2 = how the session got here
+  echo "Handoff from the previous session in this project, written by the user's /handoff ($2). It is this session's starting state: treat its CONSTRAINTS and USER sections as binding, and do not re-read it from disk ($1)."
+  echo
+  cat "$1"
+}
+
+LOAD="${CLAUDE_HANDOFF_LOAD:-}"
+if [ "$SOURCE" = "startup" ] && [ -n "$LOAD" ] && [ -f "$LOAD" ]; then
+  H="$(cat "$LOAD" 2>/dev/null)"; rm -f "$LOAD"
+  if [ -f "$H" ]; then print_body "$H" "the session was restarted right after it"; exit 0; fi
+fi
+
+if [ -n "$TRANSCRIPT_PATH" ]; then DIR="$(dirname "$TRANSCRIPT_PATH")/handoff"
+else DIR="$("$(dirname "${BASH_SOURCE[0]}")/handoff-paths.sh" "$CWD" "$SESSION_ID" 2>/dev/null)" || exit 0; fi
 F="$DIR/latest.md"; PEND="$DIR/pending-prompt.txt"
 NOW=$(date +%s)
 
-if [ -f "$PEND" ] && [ -f "$F" ]; then
+if [ -f "$PEND" ]; then
   PMOD=$(stat -c %Y "$PEND" 2>/dev/null || echo 0)
-  if [ $(( NOW - PMOD )) -lt 7200 ] && [ "$SOURCE" != "resume" ]; then
+  if [ $(( NOW - PMOD )) -ge 7200 ]; then
+    rm -f "$PEND"
+  elif [ "$SOURCE" != "resume" ] && [ -f "$F" ]; then
     TEXT="$(cat "$PEND" 2>/dev/null)"
     rm -f "$PEND"
+    print_body "$F" "then /clear"
     if [ -n "$TEXT" ]; then
-      MSG="Look at the handoff in $F. The following is the users next prompt: $TEXT"
-      echo "$MSG"
-      echo "(Parked by the user with /handoff-clear before this session started. Their next message, even a bare \"go\", is the signal to act on the prompt above as their own request. If that message asks for something else, it wins. Treat the handoff's CONSTRAINTS and USER sections as binding.)"
-      exit 0
+      echo
+      echo "PENDING REQUEST, typed by the user with /handoff before this session started: $TEXT"
+      echo "When the user's next message arrives, carry out that pending request as their own. A short go-ahead (\"dale\", \"go\", \"ok\") means exactly that: do the pending request, do not just acknowledge. If the message asks for something else instead, do that."
     fi
-  elif [ $(( NOW - PMOD )) -ge 7200 ]; then
-    rm -f "$PEND"
+    exit 0
   fi
 fi
 

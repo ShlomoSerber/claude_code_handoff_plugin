@@ -41,13 +41,13 @@ Where the evidence agrees on the trigger:
 - Manus: a 1M model "performs well only until < 256k tokens"; rot threshold around 128k.
 
 Rules that follow, for a 1M-window session model (`opus[1m]` never auto-compacts before ~967k, so nothing else will shrink the context for you):
-- Clear at task boundaries. Next prompt starts something new → `/handoff-clear <prompt>`, `/clear`.
+- Clear at task boundaries. Next prompt starts something new → `/handoff -p "<prompt>"`.
 - Inside a task, keep going. Mid-debugging state is expensive to rebuild and easy to lose.
 - Under ~20-30k tokens, do not bother. Check with `/context`.
-- Above ~100k, or when answers start ignoring earlier instructions, clear even mid-task with `/handoff-clear <next step>`.
+- Above ~150k (the size Claude Code's `/usage` reports as a large session), or when answers start ignoring earlier instructions, clear even mid-task with `/handoff -p "<next step>"`.
 - Before a break longer than the cache TTL (1 hour on Pro/Max, 5 minutes on API billing), always hand off. Re-warming 100k of cold context costs full input price ($0.50 on Opus 5) versus $0.06 for a fresh 10k.
 
-`/compact [instructions]` is the built-in alternative. It uses the session model and the warm cache, so its cost is the same as `/handoff-clear`. Reasons to prefer `/handoff-clear`: you control the size (compaction summaries run several thousand tokens and the built-in schema keeps code snippets), the note persists on disk and survives a crash, and the next session carries only a 40-token pointer until you ask for the body. `/rewind` is cheaper than both when you only want to abandon a wrong path: it truncates back to an already-cached prefix.
+`/compact [instructions]` is the built-in alternative. It uses the session model and the warm cache, so its cost is the same as `/handoff`. Reasons to prefer `/handoff`: you control the size (compaction summaries run several thousand tokens and the built-in schema keeps code snippets), the note persists on disk and survives a crash, and `-i` steers the note like `/compact [instructions]` does. `/rewind` is cheaper than both when you only want to abandon a wrong path: it truncates back to an already-cached prefix.
 
 ## 3. Format for an AI reader
 
@@ -71,21 +71,31 @@ Not used: Claude Code's auto memory (`…/memory/MEMORY.md`). That file is loade
 
 ## 5. Delivery to the next session
 
-A `SessionStart` hook (`startup|resume|clear`) prints one line with path, age and approximate size, plus "read it only when asked". About 40 tokens when a handoff exists, zero when not. The body never enters context unprompted, so a stale handoff from last week cannot hijack an unrelated session.
+Right after `/handoff`, the fresh session gets the whole note as `SessionStart` context. The user asked for it in the previous session, so it is the session's starting state, not a stale note. Two one-shot channels carry it: the load file the shell function passes in `CLAUDE_HANDOFF_LOAD` (source `startup` only, deleted on read), or `pending-prompt.txt` in the /clear fallback (under 2 hours old, never on `resume`).
 
-## 6. Why you still type `/clear` and one message
+Every other session start gets one line with path, age and approximate size, plus "read it only when asked". About 40 tokens when a handoff exists, zero when not. A stale handoff from last week cannot hijack an unrelated session.
 
-Checked in the Claude Code docs and in the 2.1.280 binary: no skill, hook output field or keybinding action can run `/clear`. Keybinding actions include `chat:clearInput` and `chat:clearScreen`, not a conversation clear. `/clear` takes no prompt argument. Messages injected through the messaging socket carry `skipSlashCommands: true`, so an injected `/clear` is plain text. `xdotool` cannot see windows on Wayland, and `TIOCSTI` is disabled (`dev.tty.legacy_tiocsti = 0`). Printing `/clear` as the skill's reply does nothing and looks like it ran; the skill must tell the user to type it.
+The handoff directory is the one that holds the session's transcript, found by session id (`scripts/handoff-paths.sh`), and the hooks take it from `transcript_path`. Until 0.5.0 the skill used the Bash tool's working directory. A session that had `cd`'d into a subdirectory wrote the note and the parked prompt under the subdirectory's encoding, while the hook after `/clear` looked under the project root. The prompt was never found. Found on 2026-09-29 with four stranded `pending-prompt.txt` files.
 
-After `/clear`, `SessionStart` fires with `source: clear`. Its stdout lands in context but does not start a turn. `hookSpecificOutput.initialUserMessage` exists in the schema but is consumed only at process start (print/SDK path); on an interactive `/clear` it is ignored.
+## 6. The restart: a new process, not `/clear`
 
-Tried and removed in 0.5.0: sending the parked prompt through the session's messaging socket (`$CLAUDE_CODE_MESSAGING_SOCKET`, `{"type":"user",…}` after `{"type":"auth",…}`). It started a turn with no extra message, as long as the hook sent synchronously and held the connection 1.5 s so Claude Code could verify the sender's process ancestry (`selfSent`); otherwise bypass mode held it for review. The socket handler always tags the message `origin: {kind: "peer"}`, even when `selfSent`, and there is no field for a user origin. So the model saw "Another Claude session sent a message … not typed by your user", and the auto-mode permission classifier treats peer messages as never carrying user intent. That label is a deliberate security boundary; the plugin does not work around it. The user preferred that the prompt count as fully theirs over saving one message.
+Checked in the Claude Code docs and in the 2.1.280 binary: no skill, hook output field or keybinding action can run `/clear`. Keybinding actions include `chat:clearInput` and `chat:clearScreen`, not a conversation clear. `/clear` takes no prompt argument. Messages injected through the messaging socket carry `skipSlashCommands: true`, so an injected `/clear` is plain text. `xdotool` cannot see windows on Wayland, and `TIOCSTI` is disabled (`dev.tty.legacy_tiocsti = 0`). `hookSpecificOutput.initialUserMessage` exists in the schema but is consumed only at process start (print/SDK path).
 
-So the hook prints the resume line as context, once, and deletes `pending-prompt.txt`. The user's next message (`dale`) starts the turn; the context line tells the model to act on the parked prompt as the user's request unless that message asks for something else. Guards: the parked prompt expires after 2 hours, and `source: resume` leaves it untouched, so an old prompt cannot fire in an unrelated session.
+A fresh process is a clean context too, and the process can be ended from outside. The Farmagram plan runner (`running-a-plan` skill) does this: a `Stop` hook kills the `claude` process once the session writes a signal file, and a loop in the same terminal starts the next session. `/handoff` uses the same idea with a shell function named `claude` (`scripts/claude-wrapper.sh`) as the loop:
+
+- The function creates a private run dir (`mktemp -d`) and exports `CLAUDE_HANDOFF_RUN` and `CLAUDE_HANDOFF_SHELL` (its shell's pid). Claude Code passes its environment to hooks and to the skill's `!` commands, so the skill knows whether the function is active.
+- `/handoff` writes `request-<session id>` as its last tool call. The `Stop` hook acts only on that file, under 10 minutes old, so an interrupted `/handoff` cannot restart a later turn.
+- The hook ends the process in `CLAUDE_PID`, which Claude Code exports to hooks, and only if its parent is the function's shell. A `claude` started inside another session inherits the function's variables; this check keeps its hook from ending the outer session.
+- `SIGTERM` comes 0.5 s after the hook returns. Tested: the old transcript still ends with the final reply and the `Stop` hook entry. There is no pause between sessions: the user asked for the restart, so the function starts the next session as soon as the old one exits (the plan runner's 15 s pause exists to stop a run; here nothing needs stopping).
+- The new session gets `--permission-mode` from the `Stop` hook's `permission_mode` (omitted for `default`), and the `-p` prompt as its positional argument. The prompt is then a real user message, typed by the user.
+
+Tried and removed in 0.5.0: sending the parked prompt through the session's messaging socket (`$CLAUDE_CODE_MESSAGING_SOCKET`). The socket handler always tags the message `origin: {kind: "peer"}`, so the model saw "Another Claude session sent a message … not typed by your user", and the auto-mode permission classifier treats peer messages as never carrying user intent. That label is a deliberate security boundary; the plugin does not work around it.
+
+Fallback without the function: the hook parks the request as `pending-prompt.txt`, the skill tells the user to type `/clear` and `dale`, and the `SessionStart` hook on `clear` prints the note plus the prompt as a pending request. Tested on Sonnet: `dale` runs the prompt. Haiku sometimes only acknowledges it.
 
 ## 7. Status line
 
-`statusLine` in settings.json receives a JSON document on stdin with `model.display_name`, `transcript_path`, `rate_limits.{five_hour,seven_day}.used_percentage` and `context_window.{context_window_size, current_usage}`. `scripts/statusline.sh` prints `<model> · 5 hour <n>% (<reset>) · Weekly <n>% (<reset>) · <model> <n>% (<reset>) · <used>/<window> <pct>%`. `<reset>` is local time, `Today HH:MM`, `Tomorrow HH:MM` or `d/m/yy HH:MM`, from `resets_at` (epoch seconds in the status JSON, ISO 8601 in the usage endpoint). Limits are green under 50%, yellow to 80%, red above. Context is green under 60k, yellow to 100k, red above, with the `/handoff-clear` suggestion appended past the threshold.
+`statusLine` in settings.json receives a JSON document on stdin with `model.display_name`, `transcript_path`, `rate_limits.{five_hour,seven_day}.used_percentage` and `context_window.{context_window_size, current_usage}`. `scripts/statusline.sh` prints `<model> · 5 hour <n>% (<reset>) · Weekly <n>% (<reset>) · <model> <n>% (<reset>) · <used>/<window> <pct>%`. `<reset>` is local time, `Today HH:MM`, `Tomorrow HH:MM` or `d/m/yy HH:MM`, from `resets_at` (epoch seconds in the status JSON, ISO 8601 in the usage endpoint). Limits are green under 50%, yellow to 80%, red above. Context is green under 90k, yellow to 150k, red above, with the `/handoff` suggestion appended past the threshold.
 
 Context: tokens in context = fresh input + cache writes + cache reads of the last main-thread request. The script reads that usage from the tail (512 KB) of `transcript_path`, skipping sidechain entries, and computes the percentage itself. `current_usage` in the status JSON is only the fallback: it is `null` right after `/clear` and can lag a turn behind, so the counter looked stuck around a handoff. A session with no reply yet shows 0.
 

@@ -1,11 +1,18 @@
 {
-  "description": "On session start, resume and /clear, print a one-line pointer to this project's latest handoff (path, age, size). Never injects the handoff body.",
+  "description": "SessionStart: pointer to this project's latest handoff, or the handoff body right after the user's /handoff. Stop: after /handoff, restart the session through the claude shell wrapper.",
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup|resume|clear",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-start.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/stop.sh", "timeout": 5 }
         ]
       }
     ]

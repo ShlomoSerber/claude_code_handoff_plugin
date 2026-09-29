@@ -28,5 +28,5 @@ REJECTED: approaches tried or considered and dropped - why. Purpose: never retry
 OPEN: unresolved questions, blockers, things waiting on the user, known bugs.
 ENV: exact commands that matter (test, run, build, deploy); services and ports; where credentials live (never the secret itself); external systems touched.
 LAST_REQUEST: the user's most recent request, verbatim.
-NEXT: the single next action, then the following 2-4 steps. If the user passed a note in $ARGUMENTS, it overrides your guess for the first step; include it verbatim.
+NEXT: the single next action, then the following 2-4 steps. If the user passed a next prompt, it overrides your guess for the first step; include it verbatim.
 ```
